@@ -539,7 +539,7 @@ body.touch #mpOpen { top:calc(env(safe-area-inset-top,0px) + 12px); right:calc(e
     <span><b>W A S D</b> drive</span><span><b>Numpad 1–6</b> gears (manual)</span><span><b>Space</b> handbrake</span><span><b>Q</b> quick turn</span>
     <span><b>C</b> camera</span><span><b>T</b> time of day</span><span><b>G</b> weather</span>
     <span><b>H</b> headlights</span><span><b>80%+ DAMAGE</b> tow recovery</span><span><b>R</b> back to road</span><span><b>M</b> map</span><span><b>N</b> sound</span><span><b>Esc</b> garage</span>
-    <span><b>150+ km/h</b> wanted stars</span><span><b>Cops</b> can surround &amp; bust you</span>
+    <span><b>P</b> call roadside / emergency services</span><span><b>150+ km/h</b> wanted stars</span><span><b>Cops</b> can surround &amp; bust you</span>
   </div>
 
 </div>
@@ -560,6 +560,19 @@ body.touch #mpOpen { top:calc(env(safe-area-inset-top,0px) + 12px); right:calc(e
   <div class="tb roleAction" id="tRoleAction" aria-label="Arrest or tow nearby vehicle">/ ARREST / TOW</div>
 </div>
 
+<style>
+#serviceOverlay{position:fixed;inset:0;z-index:140;display:none;align-items:center;justify-content:center;background:rgba(2,8,14,.78);backdrop-filter:blur(9px);padding:18px}
+#serviceOverlay.on{display:flex}#servicePanel{width:min(540px,96vw);background:linear-gradient(145deg,rgba(22,36,48,.98),rgba(7,14,22,.98));border:1px solid rgba(255,255,255,.17);border-radius:18px;padding:22px;color:#edf5fa;box-shadow:0 24px 90px #000a;font-family:system-ui,sans-serif}
+#servicePanel h2{font-size:26px;margin:0 0 5px;letter-spacing:.02em}#servicePanel p{margin:0 0 16px;color:#9eb2c2;font-size:13px}
+.serviceOptions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.servicePick{background:rgba(255,255,255,.06);color:#f2f7fb;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:14px;text-align:left;cursor:pointer;font:700 14px system-ui}.servicePick:hover{border-color:#e54a4a;background:rgba(229,74,74,.13)}.servicePick small{display:block;color:#9eb2c2;font-weight:400;margin-top:5px;line-height:1.35}.serviceClose{float:right;background:transparent;border:0;color:#b9c8d2;font-size:24px;cursor:pointer}
+@media(max-width:480px){.serviceOptions{grid-template-columns:1fr}#servicePanel{padding:18px}}
+</style>
+<div id="serviceOverlay" role="dialog" aria-modal="true" aria-label="Call a service"><div id="servicePanel"><button class="serviceClose" id="serviceClose" aria-label="Close">×</button><h2>CALL A SERVICE</h2><p>Request help for your vehicle. Press P again or Escape to close.</p><div class="serviceOptions">
+<button class="servicePick" data-service="towtruck">🚛 Tow truck<small>Recover a disabled vehicle and restore its condition.</small></button>
+<button class="servicePick" data-service="roadside">🧰 Roadside assistance<small>Quick repair at the roadside.</small></button>
+<button class="servicePick" data-service="police">🚓 Police<small>Request an officer to respond to your location.</small></button>
+<button class="servicePick" data-service="ambulance">🚑 Ambulance<small>Emergency response vehicle.</small></button>
+</div></div></div>
 <div id="menu" class="hidden" aria-label="Garage">
   <h1>Terra Drive</h1>
   <p class="lede">Open mountain roads, alpine passes, lakes and desert canyons. Drive anywhere — Forza Horizon style freedom across thirty-six square kilometres.</p>
@@ -2954,6 +2967,7 @@ const Sound={ctx:null,muted:false,engineScale:1,
    Player car & physics
    ===================================================================== */
 const damageState={amount:0,cooldown:0,lastHit:0,visuals:null,repairToast:0,blownTires:[false,false,false,false],suspension:[0,0],brokenHeadlights:[false,false],crashCount:0};
+let playerBreakdown=false,playerBreakdownTimer=95+Math.random()*90,serviceCalls=new Map(),serviceBot=null;
 const debrisBits=[];
 const player={type:'gt',color:PAINTS[0][1],colors:{body:PAINTS[0][1],door:PAINTS[0][1],spoiler:PAINTS[0][1],wheel:'#2c2c30'},x:120,z:-1550,y:30,vx:0,vz:0,vy:0,heading:0.4,yawRate:0,steer:0,grounded:true,pitch:0,roll:0,bodyPitch:0,bodyRoll:0,
   mode:'car',upgrades:{engine:0,turbo:0,tires:0,suspension:0,bodyKit:0,brakes:0,aero:0,ecu:0,diff:0,gearbox:0,weight:0,exhaust:0},rpm:900,gear:1,nitro:100,boosting:false,turboSpool:0,skid:0,quickTurn:false,model:null,lights:false,lightsManual:null,lastG:30,air:0,surf:'road',vF:0,prevVF:0,shake:0,stuck:0,heads:[]};
@@ -3004,7 +3018,7 @@ function applyCrashDamage(hit,x,z){
   toast(damageState.amount>=100?'TOTALLED · Engine disabled · Tow truck required':damageState.amount>95?'CRITICAL DAMAGE · 80 km/h limit':damageState.amount>80?'WINDSHIELD SHATTERED':damageState.amount>75?'CRITICAL DAMAGE · Tow truck required':damageState.amount>40?'Heavy impact · Vehicle damaged':'CRASH DAMAGE · Vehicle condition reduced');
   if(typeof wantedOnCrash==='function')wantedOnCrash(hit);
 }
-function repairVehicle(){if(player.mode!=='car'){toast('Enter your car to repair it');return;}if(damageState.amount<1&&!damageState.blownTires.some(Boolean)&&damageState.suspension.every(v=>v<0.01)){toast('Vehicle is already in perfect condition');return;}damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;damageState.cooldown=1;updateDamageVisuals();player.vx*=0.35;player.vz*=0.35;player.yawRate=0;if(player.model)for(const w of player.model.wheels){w.spin.scale.y=1;w.pivot.position.y=CAR_TYPES[player.type].R;w.pivot.rotation.z=0;}toast('Vehicle repaired · Engine, tires & suspension restored');}
+function repairVehicle(){playerBreakdown=false;if(player.mode!=='car'){toast('Enter your car to repair it');return;}if(damageState.amount<1&&!damageState.blownTires.some(Boolean)&&damageState.suspension.every(v=>v<0.01)){toast('Vehicle is already in perfect condition');return;}damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;damageState.cooldown=1;updateDamageVisuals();player.vx*=0.35;player.vz*=0.35;player.yawRate=0;if(player.model)for(const w of player.model.wheels){w.spin.scale.y=1;w.pivot.position.y=CAR_TYPES[player.type].R;w.pivot.rotation.z=0;}toast('Vehicle repaired · Engine, tires & suspension restored');}
 
 /* =====================================================================
    Wanted system — stars after 150 km/h, crashes raise heat, cops bust you
@@ -4042,7 +4056,10 @@ function drawMinimap(){
   if(Number(damageState.amount||0)>=80&&player.type!=='van')drawBrokenBlip(player.x,player.z);
   if(typeof mp!=='undefined'&&mp.remote)for(const r of mp.remote.values()){const d=r.target;if(d&&Number(d.damage||0)>=80)drawBrokenBlip(d.x||0,d.z||0);}
   mctx.restore();
+  // Red edge arrows point toward active multiplayer service requests for matching service drivers.
   const R=W/2-14,ca=Math.cos(a),sa=Math.sin(a);
+  for(const [id,call] of serviceCalls){if(!call||call.expires<Date.now()){serviceCalls.delete(id);continue;}if(id===(mp.peer&&mp.peer.id))continue;const wantedType=call.service==='towtruck'?'towtruck':call.service==='roadside'?'van':call.service;if(player.type!==wantedType&&!(call.service==='towtruck'&&player.type==='towtruck')&&!(call.service==='roadside'&&player.roadsideMode))continue;const dx=(call.x-player.x)/WORLD*MS*zoom,dz=(call.z-player.z)/WORLD*MS*zoom;let ux=dx*ca-dz*sa,uy=dx*sa+dz*ca;const len=Math.hypot(ux,uy)||1;ux/=len;uy/=len;const ax=W/2+ux*(W/2-25),ay=W/2+uy*(W/2-25);mctx.save();mctx.translate(ax,ay);mctx.rotate(Math.atan2(uy,ux));mctx.fillStyle='#ff303b';mctx.strokeStyle='#fff';mctx.lineWidth=1.3;mctx.beginPath();mctx.moveTo(8,0);mctx.lineTo(-6,-5);mctx.lineTo(-4,0);mctx.lineTo(-6,5);mctx.closePath();mctx.fill();mctx.stroke();mctx.restore();}
+
   const toS=(wx,wz)=>{const dx=(wx-f.x)/WORLD*MS*zoom,dz=(wz-f.z)/WORLD*MS*zoom;return[W/2+dx*ca-dz*sa,W/2+dx*sa+dz*ca];};
   for(const p of allPois()){if(p.kind!=='inside')continue;const [sx,sy]=toS(p.x,p.z);if(Math.hypot(sx-W/2,sy-W/2)<R)drawPoi(mctx,sx,sy,p,1.6,false);}
   if(foot){const [sx,sy]=toS(player.x,player.z);if(Math.hypot(sx-W/2,sy-W/2)<R)drawCarIcon(mctx,sx,sy,1.6);}
@@ -4353,6 +4370,29 @@ function startDriving(){
   started=true;state='drive';updateDamageVisuals();$('#menu').classList.add('hidden');$('#hud').classList.add('on');$('#touch').classList.add('on');camInit=false;
   try{renderer.domElement.tabIndex=0;renderer.domElement.focus();}catch(e){}}
 
+/* Service calls and random player breakdowns */
+function closeServiceGui(){document.getElementById('serviceOverlay')?.classList.remove('on');}
+function openServiceGui(){if(state!=='drive')return;const el=document.getElementById('serviceOverlay');if(el)el.classList.toggle('on');}
+function serviceToast(msg){if(typeof toast==='function')toast(msg);}
+function runOfflineService(service){
+  closeServiceGui();
+  if(serviceBot){try{scene.remove(serviceBot.root);serviceBot=null;}catch(e){}}
+  const type=service==='police'?'police':(service==='roadside'?'van':'towtruck');
+  let model;
+  try{model=buildCar(type,{body:service==='police'?'#202b39':service==='roadside'?'#f1f3f5':'#858b91',door:service==='police'?'#202b39':service==='roadside'?'#f1f3f5':'#858b91',spoiler:'#252a30',wheel:'#252a30'},true);scene.add(model.root);const h=player.heading;const x=player.x-Math.sin(h)*9,z=player.z-Math.cos(h)*9;model.root.position.set(x,groundAt(x,z)+.03,z);model.root.rotation.y=h;serviceBot={root:model.root,model,service,age:0};}
+  catch(e){serviceBot=null;}
+  serviceToast((service==='police'?'POLICE':service==='ambulance'?'AMBULANCE':service==='roadside'?'ROADSIDE ASSISTANCE':'TOW TRUCK')+' DISPATCHED · Arriving now');
+  // The offline helper arrives beside the player, waits briefly, then completes the job.
+  setTimeout(()=>{if(service==='police'){serviceToast('OFFICER ON SCENE');}else if(service==='ambulance'){serviceToast('MEDICAL TEAM ON SCENE');}else{if(player.mode==='car'){damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;playerBreakdown=false;updateDamageVisuals();player.vx*=.2;player.vz*=.2;serviceToast('SERVICE COMPLETE · VEHICLE RESTORED');}else serviceToast('SERVICE ARRIVED · Enter your car for repairs');}setTimeout(()=>{if(serviceBot){scene.remove(serviceBot.root);serviceBot=null;}},1800);},2500);
+}
+function callService(service){
+  closeServiceGui();
+  if(mp&&mp.connected&&mp.peer){const call={type:'serviceCall',service,requesterId:mp.peer.id,requester:mp.name||'Driver',x:player.x,z:player.z,expires:Date.now()+90000};mpSend(call);serviceCalls.set(call.requesterId,call);serviceToast('SERVICE REQUEST SENT · Nearby service drivers can see your call');}
+  else runOfflineService(service);
+}
+document.getElementById('serviceClose')?.addEventListener('click',closeServiceGui);
+document.querySelectorAll('.servicePick').forEach(b=>b.addEventListener('click',()=>callService(b.dataset.service)));
+
 /* =====================================================================
    Events
    ===================================================================== */
@@ -4361,6 +4401,7 @@ addEventListener('keydown',e=>{
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&state==='drive')e.preventDefault();
   keys[e.code]=true;if(e.repeat)return;
   if(mapOpen){if(e.code==='KeyM'||e.code==='Escape'){e.preventDefault();closeMap();}return;}
+  if(document.getElementById('serviceOverlay')?.classList.contains('on')){if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();closeServiceGui();}return;}
   if(state==='menu'){
     if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&e.key&&e.key.length===1){
       window._roleBuf=(window._roleBuf||'')+e.key.toLowerCase();
@@ -4385,7 +4426,7 @@ addEventListener('keydown',e=>{
   }
   switch(e.code){case'KeyC':if(player.mode==='car')cycleCamera();break;case'KeyQ':if(player.mode==='car'){player.quickTurn=!player.quickTurn;toast(player.quickTurn?'Quick turn ON (2×)':'Quick turn OFF');}break;case'KeyT':cycleTime();break;case'KeyG':toggleWeather();break;case'KeyH':toggleLights();break;
     case'KeyR':if(player.mode==='car')resetToRoad();break;case'KeyN':Sound.muted=!Sound.muted;toast(Sound.muted?'Sound off':'Sound on');break;
-    case'KeyF':break;case'KeyE':break;case'KeyM':openMap();break;
+    case'KeyF':break;case'KeyE':break;case'KeyP':openServiceGui();break;case'KeyM':openMap();break;
     case'Escape':openMenu();break;}
 });
 addEventListener('keyup',e=>{keys[e.code]=false;});
@@ -4724,7 +4765,7 @@ function mpSendTowCommand(peerId,data){
   else mpSend({type:'relayCommand',targetId:peerId,payload:data});
 }
 function mpRepairLocalCarAfterTow(){
-  damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;damageState.cooldown=1;
+  playerBreakdown=false;damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;damageState.cooldown=1;
   updateDamageVisuals();
   if(player.model)for(const w of player.model.wheels||[]){if(w.spin&&w.spin.scale)w.spin.scale.y=1;if(w.pivot){w.pivot.position.y=CAR_TYPES[player.type]?.R||0.36;w.pivot.rotation.z=0;}}
   player.vx=player.vz=player.vF=player.yawRate=0;
@@ -4775,6 +4816,7 @@ function mpOnData(d,from){if(!d)return;
   }
   else if(d.type==='towStart'){mpApplyRemoteTowStart(d);}
   else if(d.type==='serviceRepair'){mpRepairLocalCarAfterTow();toast('ROADSIDE ASSISTANCE · Your vehicle has been repaired');}
+  else if(d.type==='serviceCall'){if(d.requesterId&&d.requesterId!==(mp.peer&&mp.peer.id)){serviceCalls.set(String(d.requesterId),{...d,expires:Number(d.expires)||Date.now()+90000});if(mp.host)mpBroadcast(d,from);if(player.type==='towtruck'||player.roadsideMode)toast('SERVICE CALL · '+String(d.requester||'Driver')+' needs help');}}
   else if(d.type==='towRequest'){
     if(mp.host&&d.targetId){const c=mp.connections.get(d.targetId);if(c&&c.open){try{c.send({type:'towStart',byId:from,by:String(d.by||'Tow Truck'),duration:4});}catch(e){}}}
   }
@@ -4965,6 +5007,7 @@ function frame(now){
   rainMat.uniforms.uTime.value=elapsed;
   snowMat.uniforms.uTime.value=elapsed;snowMat.uniforms.uCam.value.copy(camera.position);rainMat.uniforms.uCam.value.copy(camera.position);
   if(state==='drive'){
+    if(player.mode==='car'&&!playerBreakdown&&player.type!=='towtruck'&&player.type!=='police'&&player.type!=='van'){playerBreakdownTimer-=dt;if(playerBreakdownTimer<=0){playerBreakdown=true;damageState.amount=100;damageState.cooldown=1;player.vx=player.vz=player.vF=0;updateDamageVisuals();toast('ENGINE FAILURE · Press P to call roadside assistance');playerBreakdownTimer=110+Math.random()*150;}}
     readInput();
     if(player.mode==='car'){if(!mp.remoteTow){const steps=dt>1/50?2:1;for(let i=0;i<steps;i++)updatePlayer(dt/steps);}else{player.vx=player.vz=player.vF=player.yawRate=0;}}else updateWalker(dt);
   }
