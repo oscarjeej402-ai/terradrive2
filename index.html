@@ -3643,7 +3643,7 @@ let nextBreakdownIn=28;
 function updateTraffic(dt){
   const P=player;
   nextBreakdownIn-=dt;
-  if(nextBreakdownIn<=0&&traffic.length){const candidates=traffic.filter(a=>!a.brokenDown&&!a.towed&&!a.arrested&&Math.hypot(a.x-P.x,a.z-P.z)>24);if(candidates.length){const a=candidates[Math.floor(Math.random()*candidates.length)];a.brokenDown=true;a.speed=0;a.vx=a.vz=0;a.breakdownTimer=0;toast('VEHICLE BREAKDOWN · Blue marker on minimap');}nextBreakdownIn=35+Math.random()*65;}
+  if(nextBreakdownIn<=0&&traffic.length){const candidates=traffic.filter(a=>!a.brokenDown&&!a.towed&&!a.arrested&&Math.hypot(a.x-P.x,a.z-P.z)>24);if(candidates.length){const a=candidates[Math.floor(Math.random()*candidates.length)];a.brokenDown=true;a.speed=0;a.vx=a.vz=0;a.breakdownTimer=0;toast('VEHICLE BREAKDOWN · Green marker on minimap');}nextBreakdownIn=35+Math.random()*65;}
   for(const a of traffic){
     pathAt(a.path,a.s,_ps);
     const fx=_ps.tx*a.dir,fz=_ps.tz*a.dir;
@@ -4050,7 +4050,8 @@ function drawMinimap(){
   if(typeof cops!=='undefined')for(const c of cops)drawCopBlip(c.x,c.z);
   if(typeof policeUnits!=='undefined')for(const u of policeUnits)drawCopBlip(u.x,u.z);
   for(const t of traffic){if(t.type==='police'||t.isPolice||t.fakePolice||t.model&&t.model.policeBar)drawCopBlip(t.x,t.z);}
-  const drawBrokenBlip=(wx,wz)=>{const ax=(wx+HALF)/WORLD*MS-px,az=(wz+HALF)/WORLD*MS-pz;if(Math.abs(ax)>120||Math.abs(az)>120)return;mctx.save();mctx.shadowColor='#35a8ff';mctx.shadowBlur=9;mctx.fillStyle='#35a8ff';mctx.beginPath();mctx.arc(ax,az,3.6,0,Math.PI*2);mctx.fill();mctx.shadowBlur=0;mctx.strokeStyle='#e9f7ff';mctx.lineWidth=0.9;mctx.stroke();mctx.restore();};
+  // Green minimap markers identify any driver or vehicle that needs service.
+  const drawBrokenBlip=(wx,wz)=>{const ax=(wx+HALF)/WORLD*MS-px,az=(wz+HALF)/WORLD*MS-pz;if(Math.abs(ax)>120||Math.abs(az)>120)return;mctx.save();mctx.shadowColor='#24ff72';mctx.shadowBlur=10;mctx.fillStyle='#24ff72';mctx.beginPath();mctx.arc(ax,az,3.8,0,Math.PI*2);mctx.fill();mctx.shadowBlur=0;mctx.strokeStyle='#eafff0';mctx.lineWidth=1; mctx.stroke();mctx.restore();};
   for(const t of traffic)if(t.brokenDown)drawBrokenBlip(t.x,t.z);
   if(Number(damageState.amount||0)>=80&&player.type!=='van')drawBrokenBlip(player.x,player.z);
   if(typeof mp!=='undefined'&&mp.remote)for(const r of mp.remote.values()){const d=r.target;if(d&&Number(d.damage||0)>=80)drawBrokenBlip(d.x||0,d.z||0);}
@@ -4564,7 +4565,7 @@ function tryRoadsideRepair(){
   if(typeof mp!=='undefined'&&mp.remote){for(const [id,r] of mp.remote){const d=r.target;if(!d||id===mp.peer?.id||Number(d.damage||0)<80)continue;const dist=Math.hypot((d.x||0)-player.x,(d.z||0)-player.z);if(dist<remoteDist){remoteDist=dist;remoteBest={id,r,d};}}}
   if(remoteBest){mpSendTowCommand(remoteBest.id,{type:'serviceRepair',by:mp.name||'Roadside Assistance'});toast('PLAYER VEHICLE REPAIRED · Assistance sent');return;}
   if(Number(damageState.amount||0)>=80&&Math.hypot(player.x-(player.x||0),player.z-(player.z||0))<0.1){toast('Your own vehicle cannot be serviced from inside');return;}
-  toast('No broken-down vehicle nearby · Look for blue minimap dots');
+  toast('No broken-down vehicle nearby · Look for green minimap dots');
 }
 
 function activateTowDriver(){
