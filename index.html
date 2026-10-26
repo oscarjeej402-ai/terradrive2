@@ -562,16 +562,15 @@ body.touch #mpOpen { top:calc(env(safe-area-inset-top,0px) + 12px); right:calc(e
 
 <style>
 #serviceOverlay{position:fixed;inset:0;z-index:140;display:none;align-items:center;justify-content:center;background:rgba(2,8,14,.78);backdrop-filter:blur(9px);padding:18px}
-#serviceOverlay.on{display:flex}#servicePanel{width:min(540px,96vw);background:linear-gradient(145deg,rgba(22,36,48,.98),rgba(7,14,22,.98));border:1px solid rgba(255,255,255,.17);border-radius:18px;padding:22px;color:#edf5fa;box-shadow:0 24px 90px #000a;font-family:system-ui,sans-serif}
+#serviceOverlay.on{display:flex}#servicePanel{width:min(900px,96vw);background:linear-gradient(145deg,rgba(22,36,48,.98),rgba(7,14,22,.98));border:1px solid rgba(255,255,255,.17);border-radius:18px;padding:22px;color:#edf5fa;box-shadow:0 24px 90px #000a;font-family:system-ui,sans-serif}
 #servicePanel h2{font-size:26px;margin:0 0 5px;letter-spacing:.02em}#servicePanel p{margin:0 0 16px;color:#9eb2c2;font-size:13px}
-.serviceOptions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.servicePick{background:rgba(255,255,255,.06);color:#f2f7fb;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:14px;text-align:left;cursor:pointer;font:700 14px system-ui}.servicePick:hover{border-color:#e54a4a;background:rgba(229,74,74,.13)}.servicePick small{display:block;color:#9eb2c2;font-weight:400;margin-top:5px;line-height:1.35}.serviceClose{float:right;background:transparent;border:0;color:#b9c8d2;font-size:24px;cursor:pointer}
-@media(max-width:480px){.serviceOptions{grid-template-columns:1fr}#servicePanel{padding:18px}}
+.serviceOptions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.servicePick{background:rgba(255,255,255,.06);color:#f2f7fb;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:14px;text-align:left;cursor:pointer;font:700 14px system-ui}.servicePick:hover{border-color:#e54a4a;background:rgba(229,74,74,.13)}.servicePick small{display:block;color:#9eb2c2;font-weight:400;margin-top:5px;line-height:1.35}.serviceClose{float:right;background:transparent;border:0;color:#b9c8d2;font-size:24px;cursor:pointer}
+@media(max-width:480px){.serviceOptions{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}#servicePanel{padding:12px}#servicePanel h2{font-size:20px}.servicePick{padding:9px 7px;font-size:12px}.servicePick small{font-size:10px;line-height:1.25}}
 </style>
 <div id="serviceOverlay" role="dialog" aria-modal="true" aria-label="Call a service"><div id="servicePanel"><button class="serviceClose" id="serviceClose" aria-label="Close">×</button><h2>CALL A SERVICE</h2><p>Request help for your vehicle. Press P again or Escape to close.</p><div class="serviceOptions">
-<button class="servicePick" data-service="towtruck">🚛 Tow truck<small>Recover a disabled vehicle and restore its condition.</small></button>
+<button class="servicePick" data-service="towtruck">🚛 Tow truck<small>Tow your car for 4 seconds, then fully repair it.</small></button>
 <button class="servicePick" data-service="roadside">🧰 Roadside assistance<small>Quick repair at the roadside.</small></button>
-<button class="servicePick" data-service="police">🚓 Police<small>Request an officer to respond to your location.</small></button>
-<button class="servicePick" data-service="ambulance">🚑 Ambulance<small>Emergency response vehicle.</small></button>
+<button class="servicePick" data-service="police">🚓 Police<small>Dispatch police assistance.</small></button>
 </div></div></div>
 <div id="menu" class="hidden" aria-label="Garage">
   <h1>Terra Drive</h1>
@@ -4377,13 +4376,42 @@ function serviceToast(msg){if(typeof toast==='function')toast(msg);}
 function runOfflineService(service){
   closeServiceGui();
   if(serviceBot){try{scene.remove(serviceBot.root);serviceBot=null;}catch(e){}}
-  const type=service==='police'?'police':(service==='roadside'?'van':'towtruck');
+  if(service==='police'){
+    let model;
+    try{model=buildCar('police',{body:'#f2f2f2',door:'#f2f2f2',spoiler:'#252a30',wheel:'#252a30'},true);scene.add(model.root);const h=player.heading;const x=player.x-Math.sin(h)*10,z=player.z-Math.cos(h)*10;model.root.position.set(x,groundAt(x,z)+.03,z);model.root.rotation.y=h;serviceBot={root:model.root,model,service,age:0};}catch(e){serviceBot=null;}
+    serviceToast('POLICE DISPATCHED · Officers are on the way');
+    setTimeout(()=>{serviceToast('POLICE ARRIVED · Assistance is on scene');setTimeout(()=>{if(serviceBot&&serviceBot.service==='police'){scene.remove(serviceBot.root);serviceBot=null;}},2200);},2500);
+    return;
+  }
+  const isTow=service==='towtruck';
+  const type=isTow?'towtruck':'van';
   let model;
-  try{model=buildCar(type,{body:service==='police'?'#202b39':service==='roadside'?'#f1f3f5':'#858b91',door:service==='police'?'#202b39':service==='roadside'?'#f1f3f5':'#858b91',spoiler:'#252a30',wheel:'#252a30'},true);scene.add(model.root);const h=player.heading;const x=player.x-Math.sin(h)*9,z=player.z-Math.cos(h)*9;model.root.position.set(x,groundAt(x,z)+.03,z);model.root.rotation.y=h;serviceBot={root:model.root,model,service,age:0};}
+  try{model=buildCar(type,{body:isTow?'#858b91':'#f1f3f5',door:isTow?'#858b91':'#f1f3f5',spoiler:'#252a30',wheel:'#252a30'},true);scene.add(model.root);const h=player.heading;const x=player.x-Math.sin(h)*9,z=player.z-Math.cos(h)*9;model.root.position.set(x,groundAt(x,z)+.03,z);model.root.rotation.y=h;serviceBot={root:model.root,model,service,age:0};}
   catch(e){serviceBot=null;}
-  serviceToast((service==='police'?'POLICE':service==='ambulance'?'AMBULANCE':service==='roadside'?'ROADSIDE ASSISTANCE':'TOW TRUCK')+' DISPATCHED · Arriving now');
-  // The offline helper arrives beside the player, waits briefly, then completes the job.
-  setTimeout(()=>{if(service==='police'){serviceToast('OFFICER ON SCENE');}else if(service==='ambulance'){serviceToast('MEDICAL TEAM ON SCENE');}else{if(player.mode==='car'){damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;playerBreakdown=false;updateDamageVisuals();player.vx*=.2;player.vz*=.2;serviceToast('SERVICE COMPLETE · VEHICLE RESTORED');}else serviceToast('SERVICE ARRIVED · Enter your car for repairs');}setTimeout(()=>{if(serviceBot){scene.remove(serviceBot.root);serviceBot=null;}},1800);},2500);
+  if(isTow){
+    serviceToast('TOW TRUCK ARRIVED · TOWING FOR 4 SECONDS');
+    const h=player.heading, startX=player.x, startZ=player.z;
+    const startTX=serviceBot?serviceBot.root.position.x:startX-Math.sin(h)*9;
+    const startTZ=serviceBot?serviceBot.root.position.z:startZ-Math.cos(h)*9;
+    const began=performance.now(),duration=4000,travel=22;
+    // Keep the player's car attached behind the tow truck throughout the four-second tow.
+    const animateTow=()=>{
+      const elapsed=performance.now()-began, t=Math.min(1,elapsed/duration);
+      const tx=startTX-Math.sin(h)*travel*t,tz=startTZ-Math.cos(h)*travel*t;
+      if(serviceBot&&serviceBot.root){serviceBot.root.position.set(tx,groundAt(tx,tz)+.03,tz);serviceBot.root.rotation.y=h;}
+      const gap=7.2;player.x=tx+Math.sin(h)*gap;player.z=tz+Math.cos(h)*gap;player.heading=h;player.y=groundAt(player.x,player.z)+.03;player.vx=player.vz=player.vF=player.vy=player.yawRate=0;
+      if(player.model&&player.model.root){player.model.root.position.set(player.x,player.y,player.z);player.model.root.rotation.y=h;}
+      if(t<1){requestAnimationFrame(animateTow);return;}
+      damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;damageState.cooldown=1;playerBreakdown=false;updateDamageVisuals();
+      if(player.model)for(const w of player.model.wheels||[]){if(w.spin&&w.spin.scale)w.spin.scale.y=1;if(w.pivot){w.pivot.position.y=CAR_TYPES[player.type]?.R||0.36;w.pivot.rotation.z=0;}}
+      player.vx=player.vz=player.vF=player.yawRate=0;serviceToast('TOW COMPLETE · VEHICLE FULLY REPAIRED');
+      setTimeout(()=>{if(serviceBot){scene.remove(serviceBot.root);serviceBot=null;}},1200);
+    };
+    requestAnimationFrame(animateTow);
+    return;
+  }
+  serviceToast('ROADSIDE ASSISTANCE DISPATCHED · Arriving now');
+  setTimeout(()=>{if(player.mode==='car'){damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;damageState.cooldown=1;playerBreakdown=false;updateDamageVisuals();player.vx*=.2;player.vz*=.2;serviceToast('SERVICE COMPLETE · VEHICLE RESTORED');}else serviceToast('SERVICE ARRIVED · Enter your car for repairs');setTimeout(()=>{if(serviceBot){scene.remove(serviceBot.root);serviceBot=null;}},1800);},2500);
 }
 function callService(service){
   closeServiceGui();
@@ -4765,7 +4793,7 @@ function mpSendTowCommand(peerId,data){
   else mpSend({type:'relayCommand',targetId:peerId,payload:data});
 }
 function mpRepairLocalCarAfterTow(){
-  playerBreakdown=false;damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;damageState.cooldown=1;
+  damageState.amount=0;damageState.blownTires=[false,false,false,false];damageState.suspension=[0,0];damageState.brokenHeadlights=[false,false];damageState.crashCount=0;damageState.cooldown=1;
   updateDamageVisuals();
   if(player.model)for(const w of player.model.wheels||[]){if(w.spin&&w.spin.scale)w.spin.scale.y=1;if(w.pivot){w.pivot.position.y=CAR_TYPES[player.type]?.R||0.36;w.pivot.rotation.z=0;}}
   player.vx=player.vz=player.vF=player.yawRate=0;
