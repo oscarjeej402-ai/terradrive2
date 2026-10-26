@@ -4051,10 +4051,12 @@ function drawMinimap(){
   if(typeof policeUnits!=='undefined')for(const u of policeUnits)drawCopBlip(u.x,u.z);
   for(const t of traffic){if(t.type==='police'||t.isPolice||t.fakePolice||t.model&&t.model.policeBar)drawCopBlip(t.x,t.z);}
   // Green minimap markers identify any driver or vehicle that needs service.
-  const drawBrokenBlip=(wx,wz)=>{const ax=(wx+HALF)/WORLD*MS-px,az=(wz+HALF)/WORLD*MS-pz;if(Math.abs(ax)>120||Math.abs(az)>120)return;mctx.save();mctx.shadowColor='#24ff72';mctx.shadowBlur=10;mctx.fillStyle='#24ff72';mctx.beginPath();mctx.arc(ax,az,3.8,0,Math.PI*2);mctx.fill();mctx.shadowBlur=0;mctx.strokeStyle='#eafff0';mctx.lineWidth=1; mctx.stroke();mctx.restore();};
+  const drawBrokenBlip=(wx,wz)=>{const ax=(wx+HALF)/WORLD*MS-px,az=(wz+HALF)/WORLD*MS-pz;if(Math.abs(ax)>120||Math.abs(az)>120)return;mctx.save();mctx.shadowColor='#00ff00';mctx.shadowBlur=16;mctx.fillStyle='#00ff00';mctx.beginPath();mctx.arc(ax,az,5,0,Math.PI*2);mctx.fill();mctx.shadowBlur=0;mctx.strokeStyle='#ffffff';mctx.lineWidth=1.25;mctx.stroke();mctx.restore();};
   for(const t of traffic)if(t.brokenDown)drawBrokenBlip(t.x,t.z);
   if((Number(damageState.amount||0)>=80&&player.type!=='van')||(typeof wanted!=='undefined'&&wanted.stars>0&&!isPoliceUnit()))drawBrokenBlip(player.x,player.z);
   if(typeof mp!=='undefined'&&mp.remote)for(const r of mp.remote.values()){const d=r.target;if(d&&(Number(d.damage||0)>=80||Number(d.wantedStars||0)>0))drawBrokenBlip(d.x||0,d.z||0);}
+  // Explicit multiplayer service requests also get a bright green help marker.
+  if(typeof serviceCalls!=='undefined')for(const call of serviceCalls.values()){if(call&&Number(call.expires||0)>Date.now()&&call.requesterId!==(mp&&mp.peer&&mp.peer.id))drawBrokenBlip(Number(call.x)||0,Number(call.z)||0);}
   mctx.restore();
   // Service-call edge arrows removed; service needs are shown directly as minimap blips.
 
