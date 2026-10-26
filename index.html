@@ -3209,7 +3209,7 @@ function setPlayerCar(type,color){
   // Keep vehicle role flags in sync with the selected vehicle. Previously every
   // car switch cleared policeMode, so selecting the cop car after a tow truck
   // looked correct but the arrest key silently did nothing until police was retyped.
-  player.towMode=(type==='towtruck');player.policeMode=(type==='police');
+  player.towMode=(type==='towtruck');player.policeMode=(type==='police');player.roadsideMode=false;roadsideMode=false;
   player.type=type;
   player.turboSpool=0;
   const nitroButton=document.getElementById('tN');if(nitroButton)nitroButton.style.display=(NITRO_CARS.has(type)&&type!=='towtruck'&&type!=='police')?'flex':'none';
@@ -3623,14 +3623,18 @@ function buildTraffic(){
 }
 function makeAI(path,s,dir,lane,speed,type,color,opts){
   const m=buildCar(type,color,true,opts);scene.add(m.root);
-  return{path,s,dir,lane,cruise:speed,speed,model:m,x:0,z:0,y:0,vx:0,vz:0,heading:0,lateralSlip:0,type,bump:0,spin:0};
+  return{path,s,dir,lane,cruise:speed,originalCruise:speed,speed,model:m,x:0,z:0,y:0,vx:0,vz:0,heading:0,lateralSlip:0,type,bump:0,spin:0,brokenDown:false,breakdownTimer:55+Math.random()*145};
 }
 const _ps={x:0,z:0,h:0,tx:0,tz:1},_ps2={x:0,z:0,h:0,tx:0,tz:1};
+let nextBreakdownIn=28;
 function updateTraffic(dt){
   const P=player;
+  nextBreakdownIn-=dt;
+  if(nextBreakdownIn<=0&&traffic.length){const candidates=traffic.filter(a=>!a.brokenDown&&!a.towed&&!a.arrested&&Math.hypot(a.x-P.x,a.z-P.z)>24);if(candidates.length){const a=candidates[Math.floor(Math.random()*candidates.length)];a.brokenDown=true;a.speed=0;a.vx=a.vz=0;a.breakdownTimer=0;toast('VEHICLE BREAKDOWN · Blue marker on minimap');}nextBreakdownIn=35+Math.random()*65;}
   for(const a of traffic){
     pathAt(a.path,a.s,_ps);
     const fx=_ps.tx*a.dir,fz=_ps.tz*a.dir;
+    if(a.brokenDown){a.speed=0;a.vx=a.vz=0;a.y=groundAt(a.x,a.z)+0.03;a.model.root.position.set(a.x,a.y,a.z);a.model.root.rotation.y=a.heading;a.model.root.visible=true;continue;}
     // avoid player
     let target=a.cruise*(1-0.12*Math.max(atmos.wet,atmos.snow));for(let o=0;o<(P.mode==='foot'?2:1);o++){const ox=o?walker.x:P.x,oz=o?walker.z:P.z;const dx=ox-a.x,dz=oz-a.z;const along=dx*fx+dz*fz,side=Math.abs(-dx*fz+dz*fx);
       if(along>0&&along<30&&side<(o?3.4:4.5))target=Math.min(target,Math.max(0,(along-(o?6:9))*0.9));}
@@ -4033,6 +4037,10 @@ function drawMinimap(){
   if(typeof cops!=='undefined')for(const c of cops)drawCopBlip(c.x,c.z);
   if(typeof policeUnits!=='undefined')for(const u of policeUnits)drawCopBlip(u.x,u.z);
   for(const t of traffic){if(t.type==='police'||t.isPolice||t.fakePolice||t.model&&t.model.policeBar)drawCopBlip(t.x,t.z);}
+  const drawBrokenBlip=(wx,wz)=>{const ax=(wx+HALF)/WORLD*MS-px,az=(wz+HALF)/WORLD*MS-pz;if(Math.abs(ax)>120||Math.abs(az)>120)return;mctx.save();mctx.shadowColor='#35a8ff';mctx.shadowBlur=9;mctx.fillStyle='#35a8ff';mctx.beginPath();mctx.arc(ax,az,3.6,0,Math.PI*2);mctx.fill();mctx.shadowBlur=0;mctx.strokeStyle='#e9f7ff';mctx.lineWidth=0.9;mctx.stroke();mctx.restore();};
+  for(const t of traffic)if(t.brokenDown)drawBrokenBlip(t.x,t.z);
+  if(Number(damageState.amount||0)>=80&&player.type!=='van')drawBrokenBlip(player.x,player.z);
+  if(typeof mp!=='undefined'&&mp.remote)for(const r of mp.remote.values()){const d=r.target;if(d&&Number(d.damage||0)>=80)drawBrokenBlip(d.x||0,d.z||0);}
   mctx.restore();
   const R=W/2-14,ca=Math.cos(a),sa=Math.sin(a);
   const toS=(wx,wz)=>{const dx=(wx-f.x)/WORLD*MS*zoom,dz=(wz-f.z)/WORLD*MS*zoom;return[W/2+dx*ca-dz*sa,W/2+dx*sa+dz*ca];};
@@ -4359,6 +4367,7 @@ addEventListener('keydown',e=>{
       if(window._roleBuf.length>10)window._roleBuf=window._roleBuf.slice(-10);
       if(window._roleBuf.endsWith('tow')){window._roleBuf='';activateTowDriver();}
       if(window._roleBuf.endsWith('police')){window._roleBuf='';activatePoliceDriver();}
+      if(window._roleBuf.endsWith('roadside')){window._roleBuf='';activateRoadsideDriver();}
     }
     if(e.code==='Enter'&&document.activeElement===document.body)startDriving();if(e.code==='Escape'&&started)startDriving();return;}
   if(state!=='drive')return;
@@ -4366,6 +4375,7 @@ addEventListener('keydown',e=>{
     // Use the selected vehicle type as the source of truth after garage switches.
     if(player.type==='towtruck'){player.towMode=true;player.policeMode=false;tryPlayerTow();}
     else if(player.type==='police'){player.policeMode=true;player.towMode=false;tryPoliceArrest();}
+    else if(player.roadsideMode||roadsideMode){tryRoadsideRepair();}
     return;
   }
   if(transmissionMode==='manual'&&player.mode==='car'&&/^Numpad[1-6]$/.test(e.code)){
@@ -4468,6 +4478,26 @@ function updateEffects(dt){
    Lightweight procedural meshes; no external assets or heavy physics.
    ===================================================================== */
 let towRecovery=null;
+let roadsideMode=false;
+function activateRoadsideDriver(){
+  setPlayerCar('van',{body:'#f1f3f5',door:'#f1f3f5',spoiler:'#f1f3f5',wheel:'#252a30'});
+  player.type='van';player.roadsideMode=true;roadsideMode=true;player.towMode=false;player.policeMode=false;
+  player.colors={body:'#f1f3f5',door:'#f1f3f5',spoiler:'#f1f3f5',wheel:'#252a30'};
+  setPlayerCar('van',player.colors);player.roadsideMode=true;roadsideMode=true;
+  toast('ROADSIDE ASSISTANCE · Approach a blue broken-down vehicle and press / to repair');
+}
+function tryRoadsideRepair(){
+  if(!(roadsideMode||player.roadsideMode)||player.mode!=='car'){toast('Type roadside on the home screen to become roadside assistance');return;}
+  let best=null,bd=13;
+  for(const ai of traffic){if(!ai||!ai.brokenDown)continue;const d=Math.hypot((ai.x||0)-player.x,(ai.z||0)-player.z);if(d<bd){bd=d;best=ai;}}
+  if(best){best.brokenDown=false;best.breakdownTimer=55+Math.random()*100;best.speed=Math.max(5,best.cruise*0.45);best.cruise=Math.max(best.originalCruise||best.cruise,18);best.originalCruise=best.cruise;best.model.root.visible=true;toast('NPC VEHICLE REPAIRED · Back on the road');return;}
+  let remoteBest=null,remoteDist=13;
+  if(typeof mp!=='undefined'&&mp.remote){for(const [id,r] of mp.remote){const d=r.target;if(!d||id===mp.peer?.id||Number(d.damage||0)<80)continue;const dist=Math.hypot((d.x||0)-player.x,(d.z||0)-player.z);if(dist<remoteDist){remoteDist=dist;remoteBest={id,r,d};}}}
+  if(remoteBest){mpSendTowCommand(remoteBest.id,{type:'serviceRepair',by:mp.name||'Roadside Assistance'});toast('PLAYER VEHICLE REPAIRED · Assistance sent');return;}
+  if(Number(damageState.amount||0)>=80&&Math.hypot(player.x-(player.x||0),player.z-(player.z||0))<0.1){toast('Your own vehicle cannot be serviced from inside');return;}
+  toast('No broken-down vehicle nearby · Look for blue minimap dots');
+}
+
 function activateTowDriver(){
   if(player.model&&player.model.root)scene.remove(player.model.root);
   const truck=makeTowTruck();
@@ -4744,6 +4774,7 @@ function mpOnData(d,from){if(!d)return;
     }
   }
   else if(d.type==='towStart'){mpApplyRemoteTowStart(d);}
+  else if(d.type==='serviceRepair'){mpRepairLocalCarAfterTow();toast('ROADSIDE ASSISTANCE · Your vehicle has been repaired');}
   else if(d.type==='towRequest'){
     if(mp.host&&d.targetId){const c=mp.connections.get(d.targetId);if(c&&c.open){try{c.send({type:'towStart',byId:from,by:String(d.by||'Tow Truck'),duration:4});}catch(e){}}}
   }
