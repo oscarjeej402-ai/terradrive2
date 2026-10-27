@@ -4416,7 +4416,7 @@ function runOfflineService(service){
 }
 function callService(service){
   closeServiceGui();
-  if(mp&&mp.connected&&mp.peer){const call={type:'serviceCall',service,requesterId:mp.peer.id,requester:mp.name||'Driver',x:player.x,z:player.z,expires:Date.now()+90000};mpSend(call);serviceCalls.set(call.requesterId,call);serviceToast('SERVICE REQUEST SENT · Nearby service drivers can see your call');}
+  if(mp&&mp.connected&&mp.peer){const call={type:'serviceCall',service,requesterId:mp.peer.id,requester:mp.name||'Driver',x:player.x,z:player.z,heading:player.heading,expires:Date.now()+90000};mpSend(call);serviceCalls.set(call.requesterId,call);serviceToast('SERVICE REQUEST SENT · Nearby service drivers can see your call');}
   else runOfflineService(service);
 }
 document.getElementById('serviceClose')?.addEventListener('click',closeServiceGui);
@@ -4845,7 +4845,27 @@ function mpOnData(d,from){if(!d)return;
   }
   else if(d.type==='towStart'){mpApplyRemoteTowStart(d);}
   else if(d.type==='serviceRepair'){mpRepairLocalCarAfterTow();toast('ROADSIDE ASSISTANCE · Your vehicle has been repaired');}
-  else if(d.type==='serviceCall'){if(d.requesterId&&d.requesterId!==(mp.peer&&mp.peer.id)){serviceCalls.set(String(d.requesterId),{...d,expires:Number(d.expires)||Date.now()+90000});if(mp.host)mpBroadcast(d,from);if(player.type==='towtruck'||player.roadsideMode)toast('SERVICE CALL · '+String(d.requester||'Driver')+' needs help');}}
+  else if(d.type==='serviceCall'){
+    if(d.requesterId&&d.requesterId!==(mp.peer&&mp.peer.id)){
+      serviceCalls.set(String(d.requesterId),{...d,expires:Number(d.expires)||Date.now()+90000});
+      if(mp.host)mpBroadcast(d,from);
+      const roleMatches=(d.service==='towtruck'&&player.type==='towtruck')||(d.service==='roadside'&&(player.roadsideMode||roadsideMode||player.type==='van'))||(d.service==='police'&&player.type==='police');
+      if(roleMatches){
+        const h=Number.isFinite(Number(d.heading))?Number(d.heading):player.heading;
+        const offset=10;
+        player.x=Number(d.x||0)-Math.sin(h)*offset;
+        player.z=Number(d.z||0)-Math.cos(h)*offset;
+        player.heading=h;
+        player.y=groundAt(player.x,player.z)+0.03;
+        player.vx=player.vz=player.vF=player.vy=player.yawRate=0;
+        if(player.model&&player.model.root){player.model.root.position.set(player.x,player.y,player.z);player.model.root.rotation.y=player.heading;}
+        camInit=false;
+        toast('DISPATCHED · Teleported to '+String(d.requester||'driver').slice(0,24));
+      } else if(player.type==='towtruck'||player.roadsideMode||player.type==='police') {
+        toast('SERVICE CALL · '+String(d.requester||'Driver')+' needs '+String(d.service||'help'));
+      }
+    }
+  }
   else if(d.type==='towRequest'){
     if(mp.host&&d.targetId){const c=mp.connections.get(d.targetId);if(c&&c.open){try{c.send({type:'towStart',byId:from,by:String(d.by||'Tow Truck'),duration:4});}catch(e){}}}
   }
