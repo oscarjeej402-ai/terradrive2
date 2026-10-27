@@ -4372,7 +4372,16 @@ function startDriving(){
 
 /* Service calls and random player breakdowns */
 function closeServiceGui(){document.getElementById('serviceOverlay')?.classList.remove('on');}
-function openServiceGui(){if(state!=='drive')return;const el=document.getElementById('serviceOverlay');if(el)el.classList.toggle('on');}
+function openServiceGui(){
+  if(state!=='drive')return;
+  // Calling for police/tow/roadside help is multiplayer-only: require an active
+  // public-lobby or private-room connection, not merely being in the driving scene.
+  if(!mp||!mp.connected||!mp.peer){
+    serviceToast('CALL FEATURE ONLY AVAILABLE IN MULTIPLAYER · Join the public lobby or a private party first');
+    return;
+  }
+  const el=document.getElementById('serviceOverlay');if(el)el.classList.toggle('on');
+}
 function serviceToast(msg){if(typeof toast==='function')toast(msg);}
 function runOfflineService(service){
   closeServiceGui();
@@ -4416,8 +4425,14 @@ function runOfflineService(service){
 }
 function callService(service){
   closeServiceGui();
-  if(mp&&mp.connected&&mp.peer){const call={type:'serviceCall',service,requesterId:mp.peer.id,requester:mp.name||'Driver',x:player.x,z:player.z,heading:player.heading,expires:Date.now()+90000};mpSend(call);serviceCalls.set(call.requesterId,call);serviceToast('SERVICE REQUEST SENT · Nearby service drivers can see your call');}
-  else runOfflineService(service);
+  // Never spawn offline/local service vehicles from the call menu.
+  if(!mp||!mp.connected||!mp.peer){
+    serviceToast('CALL FEATURE ONLY AVAILABLE IN MULTIPLAYER · Join the public lobby or a private party first');
+    return;
+  }
+  const call={type:'serviceCall',service,requesterId:mp.peer.id,requester:mp.name||'Driver',x:player.x,z:player.z,heading:player.heading,expires:Date.now()+90000};
+  mpSend(call);serviceCalls.set(call.requesterId,call);
+  serviceToast('SERVICE REQUEST SENT · Nearby service drivers can see your call');
 }
 document.getElementById('serviceClose')?.addEventListener('click',closeServiceGui);
 document.querySelectorAll('.servicePick').forEach(b=>b.addEventListener('click',()=>callService(b.dataset.service)));
