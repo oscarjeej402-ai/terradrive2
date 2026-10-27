@@ -4386,6 +4386,99 @@ function openServiceGui(){
 function serviceToast(msg){if(typeof toast==='function')toast(msg);}
 // Automated taxi ride: the taxi drives to the player, boards them, then follows
 // the single-click map waypoint. The player's own car is parked and restored at arrival.
+
+// Taxi road navigation: build a lightweight graph from the existing road curves,
+// connect nearby road samples at junctions, then route with A*.
+let taxiRoadGraph=null;
+function buildTaxiRoadGraph(){
+  if(taxiRoadGraph)return taxiRoadGraph;
+  const nodes=[], edges=[], roadNodes=[], grid=new Map(), cell=22;
+  const key=(x,z)=>Math.floor(x/cell)+','+Math.floor(z/cell);
+  roads.forEach((road,ri)=>{
+    const ids=[];
+    // About every 9 metres gives smooth turns without an oversized graph.
+    for(let i=0;i<road.n;i+=3){
+      const id=nodes.length;nodes.push({x:road.px[i],z:road.pz[i],road:ri,idx:i,edges:[]});ids.push(id);
+      const k=key(road.px[i],road.pz[i]);let a=grid.get(k);if(!a)grid.set(k,a=[]);a.push(id);
+    }
+    if(ids.length && ids[ids.length-1]!==ids[0]) {
+      const lastIdx=road.n-1;
+      if(!road.closed && nodes[ids[ids.length-1]].idx!==lastIdx){
+        const id=nodes.length;nodes.push({x:road.px[lastIdx],z:road.pz[lastIdx],road:ri,idx:lastIdx,edges:[]});
+        const k=key(road.px[lastIdx],road.pz[lastIdx]);let a=grid.get(k);if(!a)grid.set(k,a=[]);a.push(id);ids.push(id);
+      }
+    }
+    roadNodes.push(ids);
+    for(let j=0;j<ids.length-1;j++){
+      const a=ids[j],b=ids[j+1],d=Math.hypot(nodes[a].x-nodes[b].x,nodes[a].z-nodes[b].z);
+      nodes[a].edges.push([b,d]);nodes[b].edges.push([a,d]);
+    }
+    if(road.closed&&ids.length>2){
+      const a=ids[ids.length-1],b=ids[0],d=Math.hypot(nodes[a].x-nodes[b].x,nodes[a].z-nodes[b].z);
+      nodes[a].edges.push([b,d]);nodes[b].edges.push([a,d]);
+    }
+  });
+  // Join distinct road curves only where their actual road samples meet closely.
+  for(let i=0;i<nodes.length;i++){
+    const n=nodes[i],cx=Math.floor(n.x/cell),cz=Math.floor(n.z/cell);
+    for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++){
+      const a=grid.get((cx+dx)+','+(cz+dz));if(!a)continue;
+      for(const j of a){if(j<=i||nodes[j].road===n.road)continue;
+        const d=Math.hypot(nodes[j].x-n.x,nodes[j].z-n.z);
+        if(d<15){n.edges.push([j,d]);nodes[j].edges.push([i,d]);}
+      }
+    }
+  }
+  taxiRoadGraph={nodes,roadNodes};return taxiRoadGraph;
+}
+function taxiNearestRoadNode(x,z){
+  const g=buildTaxiRoadGraph();let best=-1,bd=Infinity;
+  for(let i=0;i<g.nodes.length;i++){const n=g.nodes[i],d=(n.x-x)**2+(n.z-z)**2;if(d<bd){bd=d;best=i;}}
+  return best;
+}
+function taxiFindRoadRoute(sx,sz,tx,tz){
+  const g=buildTaxiRoadGraph(),ns=g.nodes;if(!ns.length)return [{x:tx,z:tz}];
+  const start=taxiNearestRoadNode(sx,sz),goal=taxiNearestRoadNode(tx,tz);
+  if(start<0||goal<0)return [{x:tx,z:tz}];
+  const dist=new Float64Array(ns.length);dist.fill(Infinity);dist[start]=0;
+  const prev=new Int32Array(ns.length);prev.fill(-1);const closed=new Uint8Array(ns.length);
+  // Binary min-heap for A* open set.
+  const heap=[];
+  const push=(id,f)=>{let i=heap.length;heap.push([id,f]);while(i){const p=(i-1)>>1;if(heap[p][1]<=f)break;heap[i]=heap[p];i=p;}heap[i]=[id,f];};
+  const pop=()=>{const out=heap[0],last=heap.pop();if(heap.length){let i=0;while(true){let l=i*2+1,r=l+1,m=i;if(l<heap.length&&heap[l][1]<heap[m][1])m=l;if(r<heap.length&&heap[r][1]<heap[m][1])m=r;if(m===i)break;heap[i]=heap[m];i=m;}heap[i]=last;}return out;};
+  const heuristic=id=>Math.hypot(ns[id].x-ns[goal].x,ns[id].z-ns[goal].z);
+  push(start,heuristic(start));
+  while(heap.length){
+    const [u]=pop();if(closed[u])continue;if(u===goal)break;closed[u]=1;
+    for(const [v,w] of ns[u].edges){const nd=dist[u]+w;if(nd<dist[v]){dist[v]=nd;prev[v]=u;push(v,nd+heuristic(v));}}
+  }
+  const ids=[];let cur=goal,guard=0;
+  while(cur!==-1&&guard++<ns.length){ids.push(cur);if(cur===start)break;cur=prev[cur];}
+  ids.reverse();
+  const route=[{x:sx,z:sz}];
+  for(const id of ids){const n=ns[id];if(Math.hypot(route[route.length-1].x-n.x,route[route.length-1].z-n.z)>5)route.push({x:n.x,z:n.z});}
+  // The final approach from the road to a map pin is allowed to leave the road.
+  if(Math.hypot(route[route.length-1].x-tx,route[route.length-1].z-tz)>3)route.push({x:tx,z:tz});
+  return route;
+}
+function taxiSetRoute(r,tx,tz){
+  r.route=taxiFindRoadRoute(r.x,r.z,tx,tz);r.routeIndex=1;
+}
+function taxiDriveRoute(r,dt,speed){
+  if(!r.route||!r.route.length)return true;
+  while(r.routeIndex<r.route.length){
+    const p=r.route[r.routeIndex],d=Math.hypot(p.x-r.x,p.z-r.z);
+    if(d<7){r.routeIndex++;continue;}
+    const desired=Math.atan2(p.x-r.x,p.z-r.z);
+    let dh=Math.atan2(Math.sin(desired-r.heading),Math.cos(desired-r.heading));
+    const turn=Math.abs(dh);
+    r.heading+=clamp(dh,-dt*(turn>0.75?1.25:2.0),dt*(turn>0.75?1.25:2.0));
+    const step=Math.min(d,speed*dt);
+    r.x+=Math.sin(r.heading)*step;r.z+=Math.cos(r.heading)*step;
+    return false;
+  }
+  return true;
+}
 let taxiRide=null;
 function startTaxiRide(){
   if(taxiRide){serviceToast('TAXI ALREADY ON THE WAY');return;}
@@ -4412,30 +4505,30 @@ function finishTaxiRide(){
 }
 function updateTaxiRide(dt){
   const r=taxiRide;if(!r)return;
-  const moveToward=(tx,tz,speed)=>{
-    const dx=tx-r.x,dz=tz-r.z,dist=Math.hypot(dx,dz);
-    if(dist<1.8)return true;
-    const step=Math.min(dist,speed*dt);const desired=Math.atan2(dx,dz);let dh=Math.atan2(Math.sin(desired-r.heading),Math.cos(desired-r.heading));
-    r.heading+=clamp(dh,-dt*1.9,dt*1.9);r.x+=Math.sin(r.heading)*step;r.z+=Math.cos(r.heading)*step;return dist<2.5;
-  };
   if(r.phase==='pickup'){
-    if(moveToward(player.x,player.z,17)){
-      r.phase='waiting';r.x=player.x-Math.sin(r.heading)*4.5;r.z=player.z-Math.cos(r.heading)*4.5;
+    if(!r.route||r.routeTargetX!==player.x||r.routeTargetZ!==player.z){
+      r.routeTargetX=player.x;r.routeTargetZ=player.z;taxiSetRoute(r,player.x,player.z);
+    }
+    if(taxiDriveRoute(r,dt,15)){
+      r.phase='waiting';r.x=player.x-Math.sin(r.heading)*4.5;r.z=player.z-Math.cos(r.heading)*4.5;r.route=null;
       r.model.root.position.set(r.x,groundAt(r.x,r.z)+0.03,r.z);r.model.root.rotation.y=r.heading;
       if(player.model&&player.model.root)player.model.root.visible=false;
       player.vx=player.vz=player.vF=player.vy=player.yawRate=0;
       serviceToast('TAXI PICKED YOU UP · Open the map and click once to choose your destination');
     }
   }else if(r.phase==='waiting'){
-    if(waypoint){r.destination={x:waypoint.x,z:waypoint.z};r.phase='driving';serviceToast('TAXI EN ROUTE · Following your map destination');}
+    if(waypoint){
+      r.destination={x:waypoint.x,z:waypoint.z};r.phase='driving';
+      taxiSetRoute(r,r.destination.x,r.destination.z);
+      serviceToast('TAXI EN ROUTE · Following roads to your destination');
+    }
   }else if(r.phase==='driving'){
-    if(r.destination&&moveToward(r.destination.x,r.destination.z,22)){
+    if(taxiDriveRoute(r,dt,20)){
       r.x=r.destination.x;r.z=r.destination.z;finishTaxiRide();return;
     }
   }
   const y=groundAt(r.x,r.z)+0.03;r.model.root.position.set(r.x,y,r.z);r.model.root.rotation.y=r.heading;
   if(r.phase==='waiting'){
-    // Keep the hidden passenger/car anchored to the taxi while waiting for a map click.
     player.x=r.x+Math.sin(r.heading)*4.5;player.z=r.z+Math.cos(r.heading)*4.5;player.y=groundAt(player.x,player.z)+0.03;
   }else if(r.phase==='driving'){
     player.x=r.x;player.z=r.z;player.y=y;player.heading=r.heading;
